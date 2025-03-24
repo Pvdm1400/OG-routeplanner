@@ -282,7 +282,7 @@ tankstations = [
 ]
 
 def get_osrm_route(waypoints):
-    waypoint_str = ";".join([f"{lon},{lat}" for lat, lon in waypoints])
+    waypoint_str = ";".join(["{},{}".format(lon, lat) for lat, lon in waypoints])
     url = f"{OSRM_SERVER}/route/v1/driving/{waypoint_str}?overview=full&geometries=geojson"
     response = requests.get(url)
     if response.status_code != 200:
@@ -314,10 +314,14 @@ def build_route_with_filtered_tankstations(start, end, tankstations, interval_km
         if total_distance >= interval_km:
             if filtered_tanks:
                 closest = min(filtered_tanks, key=lambda s: geodesic((curr_point[1], curr_point[0]), (s[1], s[2])).km)
-                waypoints.append((closest[1], closest[2]))
-                used_stations.append(closest)
+                if closest not in used_stations:
+                    used_stations.append(closest)
+                    waypoints.append((closest[1], closest[2]))
+                else:
+                    used_stations.append(("Geen OG tanklocatie mogelijk", curr_point[1], curr_point[0]))
+                    waypoints.append((curr_point[1], curr_point[0]))
             else:
-                used_stations.append(("Geen tankstation in de buurt", curr_point[1], curr_point[0]))
+                used_stations.append(("Geen OG tanklocatie mogelijk", curr_point[1], curr_point[0]))
                 waypoints.append((curr_point[1], curr_point[0]))
             total_distance = 0
         last_point = curr_point
@@ -334,9 +338,11 @@ def geocode_address(address):
 # Streamlit UI
 st.title("OG Routeplanner (zonder Folium)")
 
-start_address = st.text_input("Startadres", value="Stockholm, Zweden")
-end_address = st.text_input("Eindadres", value="Brussel, België")
+start_address = st.text_input("Startadres", value="Oosterhamrikkade, Groningen")
+end_address = st.text_input("Eindadres", value="Kiruna, Zweden")
 route_name = st.text_input("Routenaam", value="Mijn Route")
+
+interval_km = st.slider("Afstand tussen tankstops (km)", min_value=100, max_value=500, value=250, step=25)
 
 if st.button("Genereer Route"):
     start = geocode_address(start_address)
@@ -345,14 +351,21 @@ if st.button("Genereer Route"):
     if not start or not end:
         st.error("Kon één van de adressen niet vinden.")
     else:
-        waypoints, used_stations = build_route_with_filtered_tankstations(start, end, tankstations)
+        waypoints, used_stations = build_route_with_filtered_tankstations(start, end, tankstations, interval_km=interval_km)
         route_coords = get_osrm_route([(wp[0], wp[1]) for wp in waypoints])
         if route_coords:
             df = pd.DataFrame(route_coords, columns=["Longitude", "Latitude"])
             df["Route"] = route_name
             st.map(df.rename(columns={"Latitude": "lat", "Longitude": "lon"}))
-            st.subheader("Tankstations op de route")
+
+            st.subheader("📍 OG Tanklocaties op de route")
+            tank_df = pd.DataFrame([
+                {"Latitude": lat, "Longitude": lon, "Naam": name}
+                for name, lat, lon in used_stations
+            ])
+            st.map(tank_df.rename(columns={"Latitude": "lat", "Longitude": "lon"}))
+
             for i, (name, _, _) in enumerate(used_stations, 1):
-                st.markdown(f"🛢️ **Tankstation {i}:** {name}")
+                st.markdown("🛢️ **Tankmoment {}:** {}".format(i, name))
         else:
             st.error("Kon geen route genereren met OSRM.")
