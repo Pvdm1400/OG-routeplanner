@@ -357,52 +357,21 @@ if st.button("Genereer Route"):
         if route_coords:
             df = pd.DataFrame(route_coords, columns=["Longitude", "Latitude"])
             df["Route"] = route_name
-            if used_stations:
-            eerste = used_stations[0]
-            afstand_start = geodesic((start[0], start[1]), (eerste[1], eerste[2])).km
-            st.markdown("🚦 **Afstand start → eerste tankstop:** {:.1f} km".format(afstand_start))
-            
-            laatste = used_stations[-1]
-            afstand_eind = geodesic((laatste[1], laatste[2]), (end[0], end[1])).km
-            st.markdown("🏁 **Afstand laatste tankstop → eindpunt:** {:.1f} km".format(afstand_eind))
-            
-            vorige_punt = start
-            for i, (name, lat, lon) in enumerate(used_stations, 1):
-            afstand = geodesic((vorige_punt[0], vorige_punt[1]), (lat, lon)).km
-            st.markdown("🛢️ **Tankmoment {}:** {}<br>📏 Afstand sinds vorige stop: {:.1f} km".format(i, name, afstand), unsafe_allow_html=True)
-            vorige_punt = (lat, lon)
-            
-            st.map(df.rename(columns={"Latitude": "lat", "Longitude": "lon"}))
-            
-            
-            # Routekaart
-            
-            # Tanklocaties als puntenkaart
-            st.subheader("📍 OG Tanklocaties op de route")
-            tank_df = pd.DataFrame([
-            {"Latitude": lat, "Longitude": lon, "Naam": name}
-            for name, lat, lon in used_stations
-            ])
-            tank_df = tank_df.dropna(subset=["Latitude", "Longitude"])
-            st.map(tank_df.rename(columns={"Latitude": "lat", "Longitude": "lon"}))
-            
-            # Afstand van de route met stops
-            totale_afstand = 0
-            for i in range(1, len(route_coords)):
-            p1 = route_coords[i - 1]
-            p2 = route_coords[i]
-            totale_afstand += geodesic((p1[1], p1[0]), (p2[1], p2[0])).km
-            
-            # Afstand zonder tankstops
-            originele_coords = get_osrm_route([start, end])
-            originele_afstand = 0
-            for i in range(1, len(originele_coords)):
-            p1 = originele_coords[i - 1]
-            p2 = originele_coords[i]
-            originele_afstand += geodesic((p1[1], p1[0]), (p2[1], p2[0])).km
-            
-            st.write("🛣️ **Totale afstand met OG-tanklocaties:** {:.1f} km".format(totale_afstand))
-            st.write("📏 **Afstand zonder tankstops:** {:.1f} km".format(originele_afstand))
     else:
         st.error("Kon geen route genereren met OSRM.")
 
+
+        if used_stations:
+            eerste = used_stations[0]
+            afstand_start = geodesic((start[0], start[1]), (eerste[1], eerste[2])).km
+            st.markdown("🚦 **Afstand start → eerste tankstop:** {:.1f} km".format(afstand_start))
+
+            laatste = used_stations[-1]
+            afstand_eind = geodesic((laatste[1], laatste[2]), (end[0], end[1])).km
+            st.markdown("🏁 **Afstand laatste tankstop → eindpunt:** {:.1f} km".format(afstand_eind))
+
+            vorige_punt = start
+            for i, (name, lat, lon) in enumerate(used_stations, 1):
+                afstand = geodesic((vorige_punt[0], vorige_punt[1]), (lat, lon)).km
+                st.markdown("🛢️ **Tankmoment {}:** {}<br>📏 Afstand sinds vorige stop: {:.1f} km".format(i, name, afstand), unsafe_allow_html=True)
+                vorige_punt = (lat, lon)
