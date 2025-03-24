@@ -336,9 +336,6 @@ def geocode_address(address):
 # Streamlit UI
 st.title("OG Routeplanner (zonder Folium)")
 
-start_address = st.text_input("Startadres")
-end_address = st.text_input("Eindadres")
-
 if st.button("Genereer route"):
     if start_address and end_address:
         start = geolocator.geocode(start_address)
