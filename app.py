@@ -338,8 +338,8 @@ def geocode_address(address):
 # Streamlit UI
 
 
-start_address = st.text_input("Startadres", value="Oosterhamrikkade, Groningen")
-end_address = st.text_input("Eindadres", value="Kiruna, Zweden")
+start_address = st.text_input("Startadres", value="")
+end_address = st.text_input("Eindadres", value="")
 route_name = st.text_input("Routenaam", value="Mijn Route")
 
 interval_km = st.slider("Afstand tussen tankstops (km)", min_value=100, max_value=500, value=250, step=25)
@@ -354,7 +354,9 @@ if st.button("Genereer Route"):
     else:
         waypoints, used_stations = build_route_with_filtered_tankstations(start, end, tankstations, interval_km=interval_km, corridor_km=corridor_km)
         with st.spinner("🔄 Route wordt berekend..."):
-        route_coords = get_osrm_route([(wp[0], wp[1]) for wp in waypoints])
+with st.spinner("Route wordt berekend..."):
+    route_coords = get_osrm_route([(wp[0], wp[1]) for wp in waypoints])
+st.success("Route succesvol berekend ✅")
         if route_coords:
             df = pd.DataFrame(route_coords, columns=["Longitude", "Latitude"])
             df["Route"] = route_name
