@@ -400,8 +400,7 @@ if used_stations:
     vorige_punt = start
     for i, (name, lat, lon) in enumerate(used_stations, 1):
         afstand = geodesic((vorige_punt[0], vorige_punt[1]), (lat, lon)).km
-        st.markdown("🛢️ **Tankmoment {}:** {}  
-📏 Afstand sinds vorige stop: {:.1f} km".format(i, name, afstand))
+        st.markdown("🛢️ **Tankmoment {}:** {}<br>📏 Afstand sinds vorige stop: {:.1f} km".format(i, name, afstand), unsafe_allow_html=True)
         vorige_punt = (lat, lon)
 
         else:
