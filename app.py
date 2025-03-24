@@ -103,7 +103,6 @@ m = Map(location=[tankstations[0][1], tankstations[0][2]], zoom_start=7)
 
 # Gebruik absoluut pad voor het icoon zodat het werkt in Streamlit
 icon_path = os.path.abspath("Alleen spark.png")
-)
 
 # Voeg markers toe met afbeelding als icoon
 
