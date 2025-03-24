@@ -317,11 +317,11 @@ def build_route_with_filtered_tankstations(start, end, tankstations, interval_km
                 if closest not in used_stations:
                     used_stations.append(closest)
                     waypoints.append((closest[1], closest[2]))
-                else:
-                    used_stations.append(("Geen OG tanklocatie mogelijk", curr_point[1], curr_point[0]))
+        else:
+            used_stations.append(("Geen OG tanklocatie mogelijk", curr_point[1], curr_point[0]))
                     waypoints.append((curr_point[1], curr_point[0]))
-            else:
-                used_stations.append(("Geen OG tanklocatie mogelijk", curr_point[1], curr_point[0]))
+        else:
+            used_stations.append(("Geen OG tanklocatie mogelijk", curr_point[1], curr_point[0]))
                 waypoints.append((curr_point[1], curr_point[0]))
             total_distance = 0
         last_point = curr_point
@@ -351,14 +351,14 @@ if st.button("Genereer Route"):
 
     if not start or not end:
         st.error("Kon één van de adressen niet vinden.")
-    else:
-        waypoints, used_stations = build_route_with_filtered_tankstations(start, end, tankstations, interval_km=interval_km, corridor_km=corridor_km)
+        else:
+            waypoints, used_stations = build_route_with_filtered_tankstations(start, end, tankstations, interval_km=interval_km, corridor_km=corridor_km)
         route_coords = get_osrm_route([(wp[0], wp[1]) for wp in waypoints])
         if route_coords:
             df = pd.DataFrame(route_coords, columns=["Longitude", "Latitude"])
             df["Route"] = route_name
-    else:
-        st.error("Kon geen route genereren met OSRM.")
+        else:
+            st.error("Kon geen route genereren met OSRM.")
 
 
         if used_stations:
