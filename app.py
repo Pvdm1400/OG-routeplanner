@@ -356,9 +356,9 @@ if st.button("Genereer Route"):
         route_coords = get_osrm_route([(wp[0], wp[1]) for wp in waypoints])
         if route_coords:
             df = pd.DataFrame(route_coords, columns=["Longitude", "Latitude"])
-            df["Route"] = 
+            df["Route"] = route_name
         else:
-            st.error("Kon geen route genereren met OSRM.")route_name
+            st.error("Kon geen route genereren met OSRM.")
             st.map(df.rename(columns={"Latitude": "lat", "Longitude": "lon"}))
 
             st.subheader("📍 OG Tanklocaties op de route")
