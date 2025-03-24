@@ -1,5 +1,7 @@
 
 import streamlit as st
+st.image("Alleen spark.png", width=80)
+
 import requests
 import pandas as pd
 from geopy.distance import geodesic
@@ -92,16 +94,16 @@ if st.button("Genereer Route"):
         else:
             st.error("Kon geen route genereren met OSRM.")
 
-
-
 import folium
 from folium import Map, Marker, CustomIcon, Popup
+import os
 
 # Maak een kaart (voorbeeld met centrum op eerste tankstation)
 m = Map(location=[tankstations[0][1], tankstations[0][2]], zoom_start=7)
 
-# Laad je afbeelding als een custom icon
-icon = CustomIcon('Alleen spark.png', icon_size=(30, 30))
+# Gebruik absoluut pad voor het icoon zodat het werkt in Streamlit
+icon_path = os.path.abspath("Alleen spark.png")
+icon = CustomIcon(icon_path, icon_size=(30, 30))
 
 # Voeg markers toe met afbeelding als icoon
 for name, lat, lon in tankstations:
