@@ -91,3 +91,26 @@ if st.button("Genereer Route"):
                 st.markdown(f"🛢️ **Tankstation {i}:** {name}")
         else:
             st.error("Kon geen route genereren met OSRM.")
+
+
+
+import folium
+from folium import Map, Marker, CustomIcon, Popup
+
+# Maak een kaart (voorbeeld met centrum op eerste tankstation)
+m = Map(location=[tankstations[0][1], tankstations[0][2]], zoom_start=7)
+
+# Laad je afbeelding als een custom icon
+icon = CustomIcon('Alleen spark.png', icon_size=(30, 30))
+
+# Voeg markers toe met afbeelding als icoon
+for name, lat, lon in tankstations:
+    Marker(
+        location=(lat, lon),
+        icon=icon,
+        popup=Popup(name)
+    ).add_to(m)
+
+# Toon de kaart in Streamlit
+from streamlit_folium import st_folium
+st_folium(m, width=700, height=500)
