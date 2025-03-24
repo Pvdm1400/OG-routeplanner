@@ -1,121 +1,348 @@
 
 import streamlit as st
-st.image("Alleen spark.png", width=80)
-
 import requests
-import pandas as pd
 from geopy.distance import geodesic
+import folium
+from streamlit_folium import st_folium
 from geopy.geocoders import Nominatim
 
-OSRM_SERVER = "https://router.project-osrm.org"
-
-# Tankstations als ("Naam", Latitude, Longitude) tuples
-tankstations = [
-    ("Tankstation A", 52.38042, 10.006417),
-    ("Tankstation B", 52.161625, 10.007915),
-    ("Tankstation C", 53.39059096, 10.04460454),
-    ("Tankstation D", 53.701913, 10.057361),
-    ("Tankstation E", 52.6091111111111, 10.07575)
-]
-
-def get_osrm_route(waypoints):
-    waypoint_str = ";".join([f"{lon},{lat}" for lat, lon in waypoints])
-    url = f"{OSRM_SERVER}/route/v1/driving/{waypoint_str}?overview=full&geometries=geojson"
-    response = requests.get(url)
-    if response.status_code != 200:
-        return []
-    data = response.json()
-    if 'routes' not in data or not data['routes']:
-        return []
-    return data['routes'][0]['geometry']['coordinates']
-
-def is_within_corridor(start, end, point, corridor_km=100):
-    d1 = geodesic((start[0], start[1]), (point[1], point[2])).km
-    d2 = geodesic((point[1], point[2]), (end[0], end[1])).km
-    d_total = geodesic((start[0], start[1]), (end[0], end[1])).km
-    return abs((d1 + d2) - d_total) <= corridor_km
-
-def build_route_with_filtered_tankstations(start, end, tankstations, interval_km=250):
-    route = get_osrm_route([start, end])
-    if not route:
-        return [], []
-    filtered_tanks = [ts for ts in tankstations if is_within_corridor(start, end, ts)]
-    waypoints = [start]
-    used_stations = []
-    total_distance = 0
-    last_point = route[0]
-    for i in range(1, len(route)):
-        curr_point = route[i]
-        step_distance = geodesic((last_point[1], last_point[0]), (curr_point[1], curr_point[0])).km
-        total_distance += step_distance
-        if total_distance >= interval_km:
-            if filtered_tanks:
-                closest = min(filtered_tanks, key=lambda s: geodesic((curr_point[1], curr_point[0]), (s[1], s[2])).km)
-                waypoints.append((closest[1], closest[2]))
-                used_stations.append(closest)
-            else:
-                used_stations.append(("Geen tankstation in de buurt", curr_point[1], curr_point[0]))
-                waypoints.append((curr_point[1], curr_point[0]))
-            total_distance = 0
-        last_point = curr_point
-    waypoints.append(end)
-    return waypoints, used_stations
-
-def geocode_address(address):
-    geolocator = Nominatim(user_agent="streamlit-routeplanner")
-    location = geolocator.geocode(address)
-    if location:
-        return (location.latitude, location.longitude)
-    return None
-
-# Streamlit UI
+st.set_page_config(page_title="OG Routeplanner", layout="wide")
+st.image("Alleen spark.png", width=80)
 st.title("OG Routeplanner")
 
-start_address = st.text_input("Startadres", value="Stockholm, Zweden")
-end_address = st.text_input("Eindadres", value="Brussel, België")
-route_name = st.text_input("Routenaam", value="Mijn Route")
+# Gebruikersinstellingen
+st.sidebar.header("Route-instellingen")
+afstand_interval = st.sidebar.slider("Afstand tussen tankstations (km)", min_value=50, max_value=500, value=250, step=10)
+max_afwijking = st.sidebar.slider("Maximale afwijking van route (km)", min_value=10, max_value=300, value=100, step=10)
 
-if st.button("Genereer Route"):
-    start = geocode_address(start_address)
-    end = geocode_address(end_address)
+# Ingebouwde lijst met tankstations
+tankstations = [
+    ("ADRIANO OLIVETTI SNC 13048", 45.38002021, 8.14634168),
+    ("LUIGI GHERZI 15 28100", 454.54214523, 86.48874407),
+    ("MEZZACAMPAGNA SNC 37135", 45.38885498, 109.93260597),
+    ("Via Gramsci 45 15061", 44.69849229, 88.84370036),
+    ("Korendreef  31", 0.00000052, 0.00000000),
+    ("Osterstraße 90", 5.28505833, 8.05091667),
+    ("An der alten Bundesstraße 210", 0.00000005, 0.00000008),
+    ("An der B 167 4 (Finowfurt)", 0.00005285, 0.00136860),
+    ("Bischheimer Straße 9", 0.00000005, 0.00000008),
+    ("Bremer Straße 72 (Ostenburg)", 0.00005313, 0.00000823),
+    ("Elmshorner Straße 36", 0.00000054, 0.00000010),
+    ("Erftstraße 127 (Sindorf)", 0.00000509, 0.00000067),
+    ("Esenser Straße 109", 0.00000005, 0.00000001),
+    ("Friedenstraße 36", 0.00000005, 0.00000001),
+    ("Hannoversche Heerstraße 44", 5.26091111, 0.00000001),
+    ("Jeverstraße 9", 0.00000005, 0.00000008),
+    ("Laatzener Straße  10 (Mittelfeld Messe)", 0.00000523, 0.00000010),
+    ("Neuenkamper Straße 2-4", 0.00000051, 0.00000007),
+    ("Oberrege 6", 0.00000053, 0.00000008),
+    ("Oldenburger Straße 290a", 0.00000053, 0.00000008),
+    ("Prinzessinweg 2 (Haarentor)", 0.00000001, 0.00000001),
+    ("Schützenstraße 11", 0.00000052, 0.00000014),
+    ("Spenglerstraße 2, Bernauer Straße, B 2 (Lindenberg)", 5.26081944, 0.00000001),
+    ("Werler Straße 30", 0.00000052, 0.00000009),
+    ("Winsener Straße 25 (Maschen)", 0.00005339, 0.00001004),
+    ("Frankfurter Chaussee 68 (Fredersdorf)", 0.00000052, 0.00000014),
+    ("Rudolf-Diesel-Straße 2 (Jübberde Remels Apen)", 0.00000005, 0.00000008),
+    ("A. Plesmanlaan 1", 0.00000053, 0.00000007),
+    ("Bornholmstraat 99", 0.00532043, 0.00006613),
+    ("Böseler Straße 6", 0.00000005, 0.00000008),
+    ("nan", 0.00000005, 7.16205556),
+    ("nan", 5.31523333, 7.71202778),
+    ("Beusichemseweg 58", 0.00000052, 0.00000001),
+    ("Couwenhoekseweg 6", 0.00000052, 0.00000005),
+    ("Emma Goldmanweg 4 (Katsbogten)", 0.00000052, 0.00000005),
+    ("Groningerweg 58", 0.00000053, 0.00000006),
+    ("Henri Blomjousstraat 1", 0.00000052, 0.00000005),
+    ("Im Doorgrund 2", 0.00000005, 0.00000008),
+    ("Kruisweg 471 (Schiphol)", 0.00000052, 0.00000005),
+    ("Skoon 2", 0.00000052, 0.00000005),
+    ("Stedinger Straße 6 (Bookholzberg)", 5.30891944, 8.52883333),
+    ("Wasaweg  20", 0.00000053, 0.00000007),
+    ("nan", 0.00004902, 0.00001095),
+    ("Hauptstraße 138", 0.00000005, 0.00000008),
+    ("nan", 4.75527778, 9.70163889),
+    ("Blexersander Straße 2", 0.00000005, 0.00000085),
+    ("Daimlerstraße 32", 0.00000049, 0.00000009),
+    ("Oldenburger Straße 69", 0.00000053, 0.00000008),
+    ("Siedlungsweg 2", 0.00000051, 0.00000011),
+    ("Leher Straße 2a (Spaden)", 0.00000054, 0.00000009),
+    ("Bedrijfsweg 2", 0.00000005, 0.00000005),
+    ("Binckhorstlaan 100", 0.00000005, 0.00000004),
+    ("Cornelis Douwesweg 15", 0.00000052, 0.00000005),
+    ("Middelweg 3", 0.00000052, 0.00000005),
+    ("Middenweg 100", 0.00000051, 0.00000006),
+    ("A4", 0.00000052, 0.00000000),
+    ("Fürstenwalder Straße 10c", 0.00000052, 0.00000014),
+    ("Langenfelder Straße 105", 0.00000051, 0.00000007),
+    ("Bahnhofstraße 40", 5.30913056, 7.39080556),
+    ("Bremer Straße 55", 0.00000053, 0.00000001),
+    ("Giflitzer Straße 12", 5.11326111, 9.12341667),
+    ("Ostendorfer Straße 1", 0.00000053, 0.00000009),
+    ("Industriestraat 1", 0.00000052, 0.00000005),
+    ("Maaswijkweg 5", 0.00000005, 0.00000004),
+    ("Vormerij 12", 0.00005229, 0.00674479),
+    ("Burgemeester Grollemanweg 8", 0.00005296, 0.00065486),
+    ("Changing Lane 10", 0.00000052, 0.00000005),
+    ("Rijksstraatweg 124", 0.00000052, 0.00000000),
+    ("Noorddijk 7", 0.00000051, 0.00000006),
+    ("nan", 4.93587778, 6.71811111),
+    ("nan", 0.00000051, 0.00000012),
+    ("nan", 0.00000005, 0.00000001),
+    ("Ammerlandallee 18-20", 0.00000053, 0.00000008),
+    ("Berliner Straße 6", 0.00000005, 0.00000007),
+    ("Binderslebener Landstraße 100", 0.00000005, 0.00000001),
+    ("Erdinger Straße 145", 4.83841389, 1.17640833),
+    ("Europa-Allee 4", 0.00000053, 0.00000006),
+    ("Fahrenheitstraat 2", 0.00000053, 0.00000001),
+    ("Große Rurstraße 100", 0.00000051, 0.00006353),
+    ("Grüner Hof 5", 0.00000005, 7.86286111),
+    ("Hamburger Straße 211", 0.00000005, 0.00000010),
+    ("Heinsbergerweg 3a", 0.00000051, 0.00000006),
+    ("Lathener Straße 1 - 3", 0.00000053, 0.00000007),
+    ("Mainzer Straße 84", 0.00049643, 0.00836337),
+    ("Martin-Luther-Straße 18", 0.00000051, 0.00000007),
+    ("Oldenburger Damm 12", 5.34845278, 8.02744444),
+    ("Oldenburger Straße 14", 0.00000053, 0.00000008),
+    ("Oldenburger Straße 141", 0.00005324, 0.00000820),
+    ("Oranienbaumer Chaussee 40 (Mildensee)", 0.00000005, 0.00000001),
+    ("Podbielskistraße 216 (List)", 0.00000001, 9.78091667),
+    ("Schiffmühler Straße 2", 0.00000005, 0.00000001),
+    ("Schwieberdinger Straße 133", 0.00000000, 0.00000009),
+    ("Uerdinger Straße 8", 0.00000001, 0.00000007),
+    ("Vahrenwalder Straße 138 (Vahrenwald)", 0.00000052, 0.00000010),
+    ("Wachbacher Straße 100", 4.94763889, 9.77155556),
+    ("Weimarische Straße 36", 0.00000005, 1.10545833),
+    ("Werner-Kammann-Straße 3-7", 0.00000005, 0.00000009),
+    ("nan", 0.00000050, 0.00000001),
+    ("Am Zainer Berg 2 (Rhüden)", 5.19472222, 1.01393611),
+    ("nan", 0.00000053, 0.00000008),
+    ("Benjamin Franklinstraat 2", 0.00000005, 0.00000007),
+    ("Ossebroeken 8", 0.00052859, 0.00006495),
+    ("Stephensonstraat 63", 0.00000053, 0.00000007),
+    ("Stettinweg 22", 0.00000053, 0.00000007),
+    ("Wethouder Kuijersstraat 2", 0.00000053, 0.00000006),
+    ("Morseweg 1c", 0.00000053, 0.00000006),
+    ("Kemnather Straße 78", 0.00000050, 0.00000012),
+    ("Ziegelhütter Weg 14-16", 0.00000051, 0.00000009),
+    ("Biltseweg 2", 0.00000052, 0.00000001),
+    ("Bremer Straße 69", 5.24390833, 9.58880556),
+    ("Hans-Mess-Straße 2", 0.00502241, 0.00085805),
+    ("Industriestraße 29", 0.00000005, 0.00000012),
+    ("Steinbrüchenstraße 1", 0.00000005, 0.00000001),
+    ("Bünder Straße 184 (Lippinghausen)", 0.00521491, 0.00865002),
+    ("nan", 0.05306024, 0.00916493),
+    ("Posthalterweg 10 (Wechloy)", 0.00000005, 0.00000008),
+    ("Gottlieb-Daimler-Straße 2c (Harber)", 0.00005300, 0.00000992),
+    ("Otto-Hahn-Straße 5", 0.00000005, 0.00000001),
+    ("Hagener Straße 110-114", 0.00513251, 0.00073529),
+    ("Galjoenweg 17", 0.00000005, 0.00000006),
+    ("Davenstedter Straße 128a (Lindener Hafen)", 0.00000005, 0.00000097),
+    ("De Flinesstraat 9 (Duivendrecht)", 0.00000052, 0.00000005),
+    ("Industriestraße 10", 5.21914722, 8.35427778),
+    ("nan", 0.00000053, 0.00000007),
+    ("nan", 0.00000005, 0.00000000),
+    ("nan", 0.00000050, 0.00000008),
+    ("nan", 0.00050094, 0.00090496),
+    ("nan", 5.18109444, 1.09385833),
+    ("nan", 0.00000052, 0.00000012),
+    ("A.J. Romijnweg  10", 0.00000005, 0.00000001),
+    ("Alehögsvägen 2", 0.00000057, 0.00000015),
+    ("Antenngatan 2 (Marconimotet)", 0.00000006, 0.00000001),
+    ("Argongatan 30 (Åbro Industriområde)", 0.00000006, 0.00000001),
+    ("Atoomweg 40", 0.00000005, 0.00000001),
+    ("Australiëhavenweg 21", 0.00000005, 0.00000005),
+    ("Axel Odhners Gata 60 (Högsbo)", 0.00000006, 0.00000001),
+    ("Barrier Straße 33", 0.00000005, 0.00000001),
+    ("Bergerstraße 97", 0.00000053, 0.00000014),
+    ("Beurtvaart 3", 0.00000053, 0.00000006),
+    ("Bockängsgatan 3", 0.00000058, 0.00000015),
+    ("Borgens gata 1", 0.00000058, 0.00000013),
+    ("Brodalsvägen 6", 0.00000058, 0.00000012),
+    ("Brofästet Öland 3", 0.00000057, 0.00016490),
+    ("Brogårdsgatan 22", 0.00000057, 0.00000015),
+    ("Bultgatan 41 (Rollsbo industriområde)", 0.00000006, 0.00000000),
+    ("De Stuwdam 5", 0.00000052, 0.00000005),
+    ("Deltavägen 13", 0.00000006, 0.00000001),
+    ("Dordrechtweg 11", 0.00000052, 0.00000006),
+    ("Drottningholmsvägen 490 (Bromma)", 0.00000059, 0.00000018),
+    ("Florynwei  5", 0.00000053, 0.00000006),
+    ("Förrådsvägen 1", 0.00000058, 0.00000011),
+    ("Generatorstraat 18", 0.00000052, 0.00000005),
+    ("Gjutjärnsgatan 1 (Ringön)", 0.00000006, 0.00000001),
+    ("Göteborgsvägen 2a", 0.00000001, 0.00000000),
+    ("Hammarsmedsgatan 27", 0.00000587, 0.00000014),
+    ("Hangarvägen (Härryda)", 0.00000058, 0.00000012),
+    ("Hantverksgatan 34 (Inlag)", 0.05747849, 0.00001208),
+    ("Hjortshögsvägen 7", 0.00005607, 0.00127668),
+    ("Hoendiep 270", 0.00000053, 0.00000006),
+    ("Importgatan 4 (Hisings Backa)", 0.00005775, 0.00119925),
+    ("Industriewei 25", 0.00000053, 0.00000006),
+    ("Johannesbergsvägen 1", 0.00000006, 0.00000001),
+    ("Kraftgatan 11", 0.00000058, 0.00000014),
+    ("Kungsparksvägen 1", 0.00000006, 0.00000001),
+    ("Monteringsvägen 2 (Volvo Sörred)", 0.00000001, 0.00000001),
+    ("Nudepark 200", 0.00000052, 0.00000001),
+    ("Oljevägen 1", 0.00000006, 0.00000001),
+    ("Overijsselsestraatweg 1a", 0.00000001, 0.00000006),
+    ("Petter Jönssons Väg 4", 0.00000058, 0.00000015),
+    ("Pluto 3", 0.00005298, 0.00005938),
+    ("Ramsåsa 908", 0.00555601, 0.00013912),
+    ("Regementsgatan  22", 0.00000058, 0.00000013),
+    ("Ribbingsbergsgatan 5", 0.00000056, 0.00000014),
+    ("Robert-Koch-Straße 4", 0.00528531, 0.09691328),
+    ("Sankt Sigfridsgatan 91 (Kallebäck)", 0.00000006, 0.00000001),
+    ("Sikkel 22", 0.00000053, 0.00000007),
+    ("Slängom", 0.00000006, 0.00000001),
+    ("Spadegatan 22 (Angered)", 0.00000058, 0.00000000),
+    ("Stettiner Straße 25", 0.00504353, 0.00749242),
+    ("Susvindsvägen 21", 0.00000001, 0.00000001),
+    ("Sydhamnsgatan 12", 0.00000006, 0.00000001),
+    ("Tallskogsvägen", 0.00000585, 0.00001314),
+    ("Tradenvägen 6 (Håby gård)", 0.00000058, 0.00000012),
+    ("Vallenvägen 5 (Stora Höga)", 0.00000058, 0.00000012),
+    ("Vänersborgsvägen - Wallentinsvägen", 0.00000058, 0.00000013),
+    ("Vasavägen 1", 0.00000006, 0.00000001),
+    ("Veldkampsweg 26", 0.00000524, 0.00000007),
+    ("Vilangatan", 0.00000006, 0.00000001),
+    ("Warodells väg 3", 0.00000058, 0.00001356),
+    ("Westfalenstraße  10", 0.00005133, 0.00069783),
+    ("Alte Heerstrasse 1 (Einum)", 0.00000052, 0.00000010),
+    ("Düsseldorfer Landstraße 424 (Huckingen)", 0.00000005, 0.00000007),
+    ("Grevesmühlener Straße  6", 0.00000054, 0.00000112),
+    ("Harburger Straße 18", 0.00000054, 0.00000009),
+    ("Lornsenstraße 142", 0.00000054, 0.00000010),
+    ("Mielestraße 20", 0.00000005, 0.00000010),
+    ("Rolfinckstraße 48 (Wellingsbüttel)", 0.00000005, 1.00894444),
+    ("Segeberger Chaussee 345", 0.00000054, 0.00000010),
+    ("Viktoriastraße 22 - 24", 0.00000052, 0.00000009),
+    ("Wanderslebener Straße 24 (Mühlberg)", 0.00000051, 0.00000011),
+    ("Nobelstraat 6", 0.00000052, 0.00000006),
+    ("Nadorster Straße 253 (Nadorst)", 0.00005316, 0.00822524),
+    ("nan", 0.00000051, 0.00000013),
+    ("Raiffeisenstraße 18", 5.34573333, 7.49766667),
+    ("nan", 4.85438056, 1.03675556),
+    ("Ängelholmsvägen 38", 0.00000006, 0.00000001),
+    ("Skördevägen 2 (Lerberget)", 5.61808014, 1.25639000),
+    ("Osterholzer Heerstraße 161 (Osterholz)", 5.30576111, 0.00000001),
+    ("Europaweg 1", 0.00531673, 0.00068662),
+    ("Vossenkamp 8", 0.00000053, 0.00000006),
+    ("nan", 0.00000005, 0.00000001),
+    ("Berliner Straße 1-3 (Dorum)", 0.00000054, 0.00000086),
+    ("Celler Straße  58", 0.00000053, 0.00000010),
+    ("Delmenhorster Straße 12", 0.00000005, 0.00000008),
+    ("Hindenburgstraße 1", 0.00053374, 0.00009008),
+    ("Industriestraße 2", 0.00000053, 0.00000009),
+    ("Raiffeisenstraße 10 (Bad Bederkesa)", 0.00000054, 0.00000009),
+    ("Stader Straße 40", 5.36811111, 9.17913889),
+    ("Warsteiner Straße 41", 5.13604722, 8.28661111),
+    ("Werderstraße 3-4", 0.00000005, 0.00000001),
+    ("Wildeshauser Landstraße 60", 0.00000053, 0.00000009),
+    ("Henleinstraße 1", 0.00000053, 0.00000009),
+    ("['s-Hertogenbosch]", 0.00000052, 0.00000005),
+    ("Anthony Fokkerweg 8", 0.00000052, 0.00000005),
+    ("De Striptekenaar 83", 0.00000052, 0.00000005),
+    ("Dijkje 20", 0.00000005, 0.00000005),
+    ("Haardijk 3", 0.00000005, 0.00000007),
+    ("Ookmeerweg 501", 0.00000052, 0.00000005),
+    ("Parkweg 98", 0.00000052, 0.00000007),
+    ("Randweg 18 ( )", 0.00000053, 0.00000006),
+    ("Rondweg 3", 0.00000052, 0.00000007),
+    ("Sögeler Straße 9", 0.00005285, 0.00000767),
+    ("Chausseestraße 1", 0.00000005, 0.00000136),
+    ("Ruhlebener Straße 1a (Spandau)", 0.00000053, 0.00000013),
+    ("Bahnhofstraße 2", 5.29684167, 7.34886111),
+    ("Bassumer Straße 83", 0.00000053, 0.00000009),
+    ("Emder Straße 33 (Georgsheil)", 0.00000005, 0.00000001),
+    ("Gernröder Chaussee 1", 5.17716389, 1.11404167),
+    ("Mindener Straße 2a", 0.00000005, 0.00000009),
+    ("Monschauer Straße 69", 5.07932222, 6.47052778),
+    ("Schönauer Straße 113 (Großzschocher)", 5.13106944, 1.23088333),
+    ("Venloer Straße 1", 5.15201944, 6.31011111),
+    ("Westersteder Straße 14a (Zetel)", 0.00000534, 0.00000795),
+    (" Marconistraat 17", 0.00000052, 0.00000006),
+    ("Kieler Straße 196 - 198 (Zentrum)", 5.40889444, 9.98669444),
+    ("Cloppenburger Straße 224 (Kreyenbrück)", 0.00000053, 0.00000008),
+    ("De Wissel 2", 0.00000053, 0.00000006),
+    ("Dolderweg 48", 0.00000053, 0.00000006),
+    ("Geraldadrift 2", 0.00000053, 0.00000007),
+    ("Havenweg 23", 0.00000052, 0.00000005),
+    ("Kissel 43", 0.00000051, 0.00000001),
+    ("Okkenbroekstraat 19", 0.00000052, 0.00000006),
+    ("Parkweg 85", 0.00000052, 0.00000005),
+    ("Raalterweg 56", 0.00000052, 0.00000006),
+    ("Sint Bonifaciuslaan 83", 0.00000051, 0.00000006),
+    ("Stationsweg 24", 0.00000053, 0.00000006),
+    ("Wijheseweg 45", 0.00000052, 0.00000006),
+    ("Piet Van Donkplein 3", 0.00005225, 0.00006207),
+    ("Schiedamsedijk 12", 0.00000052, 0.00000004),
+    ("Seggelant-Zuid 1", 0.00000052, 0.00000004),
+    ("nan", 0.00000052, 0.00000009),
+    ("Cuxhavener Straße 31", 0.00000054, 0.00000009),
+    ("Midslanderhoofdweg 5 (Midsland)", 0.00000053, 0.00000005),
+    ("Uterwei 20", 0.00000053, 0.00000006),
+    ("Lozerlaan 4 (De Uithof)", 0.00000052, 0.00000004),
+    ("Rijksstraatweg 82", 0.00005251, 0.00000465),
+    ("de Bolder 71", 0.00000053, 0.00000006),
+    ("Jupiterweg 7", 0.00000053, 0.00000006),
+    ("Transportweg 24", 0.00000052, 0.00000005),
+    ("Bremer Straße 46", 0.00000001, 0.00000009),
+    ("Hildesheimer Straße 407 (Wülfel)", 5.23264167, 9.78166667),
+]
 
-    if not start or not end:
-        st.error("Kon één van de adressen niet vinden.")
+
+# Start- en eindlocatie invoer
+st.sidebar.header("Routepunten")
+start_loc = st.sidebar.text_input("Startlocatie (bijv. Amsterdam)")
+end_loc = st.sidebar.text_input("Eindlocatie (bijv. Berlijn)")
+
+geolocator = Nominatim(user_agent="og-routeplanner")
+
+def geocode(loc):
+    try:
+        location = geolocator.geocode(loc)
+        return (location.latitude, location.longitude)
+    except:
+        return None
+
+if start_loc and end_loc:
+    start_coords = geocode(start_loc)
+    end_coords = geocode(end_loc)
+
+    if start_coords and end_coords:
+        # Bereken afstand
+        route_afstand = geodesic(start_coords, end_coords).km
+
+        # Filter tankstations binnen corridor
+        def is_within_corridor(start, end, point, corridor_km):
+            d1 = geodesic(start, (point[1], point[2])).km
+            d2 = geodesic((point[1], point[2]), end).km
+            d_total = geodesic(start, end).km
+            return abs((d1 + d2) - d_total) <= corridor_km
+
+        filtered_stations = [ts for ts in tankstations if is_within_corridor(start_coords, end_coords, ts, max_afwijking)]
+
+        # Bouw folium-kaart
+        m = folium.Map(location=start_coords, zoom_start=6)
+
+        # Voeg start en eindpunt toe
+        folium.Marker(start_coords, tooltip="Start", icon=folium.Icon(color="green")).add_to(m)
+        folium.Marker(end_coords, tooltip="Eind", icon=folium.Icon(color="red")).add_to(m)
+
+        # Voeg tankstation-markers toe
+        for name, lat, lon in filtered_stations:
+            folium.Marker(
+                location=(lat, lon),
+                tooltip=name,
+                icon=folium.Icon(color="blue", icon="tint", prefix="fa")
+            ).add_to(m)
+
+        # Toon kaart
+        st_folium(m, width=900, height=600)
+
+        # Toon afstand
+        st.markdown(f"### Totale afstand tussen start en eindpunt: **{route_afstand:.2f} km**")
     else:
-        waypoints, used_stations = build_route_with_filtered_tankstations(start, end, tankstations)
-        route_coords = get_osrm_route([(wp[0], wp[1]) for wp in waypoints])
-        if route_coords:
-            df = pd.DataFrame(route_coords, columns=["Longitude", "Latitude"])
-            df["Route"] = route_name
-            st.map(df.rename(columns={"Latitude": "lat", "Longitude": "lon"}))
-            st.subheader("Tankstations op de route")
-            for i, (name, _, _) in enumerate(used_stations, 1):
-                st.markdown(f"🛢️ **Tankstation {i}:** {name}")
-        else:
-            st.error("Kon geen route genereren met OSRM.")
-
-import folium
-from folium import Map, Marker, CustomIcon, Popup
-import os
-
-# Maak een kaart (voorbeeld met centrum op eerste tankstation)
-m = Map(location=[tankstations[0][1], tankstations[0][2]], zoom_start=7)
-
-# Gebruik absoluut pad voor het icoon zodat het werkt in Streamlit
-icon_path = os.path.abspath("Alleen spark.png")
-
-# Voeg markers toe met afbeelding als icoon
-
-# Gebruik base64 data URL als zichtbaar icoon
-icon = folium.CustomIcon("data:image/png;base64,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", icon_size=(50, 50))
-
-for name, lat, lon in tankstations:
-    Marker(
-        location=(lat, lon),
-        icon=icon,
-        popup=Popup(name)
-    ).add_to(m)
-
-# Toon de kaart in Streamlit
-from streamlit_folium import st_folium
-st_folium(m, width=700, height=500)
+        st.error("Start of eindlocatie kon niet worden gevonden.")
+else:
+    st.info("Vul een start- en eindlocatie in om de route te berekenen.")
