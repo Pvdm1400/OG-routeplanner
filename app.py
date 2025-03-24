@@ -357,27 +357,31 @@ if st.button("Genereer Route"):
         if route_coords:
             df = pd.DataFrame(route_coords, columns=["Longitude", "Latitude"])
             df["Route"] = route_name
-        else:
-            st.error("Kon geen route genereren met OSRM.")
+    else:
+        st.error("Kon geen route genereren met OSRM.")
             st.map(df.rename(columns={"Latitude": "lat", "Longitude": "lon"}))
 
+            
+            # Routekaart
+            st.map(df.rename(columns={"Latitude": "lat", "Longitude": "lon"}))
+
+            # Tanklocaties als puntenkaart
             st.subheader("📍 OG Tanklocaties op de route")
             tank_df = pd.DataFrame([
                 {"Latitude": lat, "Longitude": lon, "Naam": name}
                 for name, lat, lon in used_stations
             ])
+            tank_df = tank_df.dropna(subset=["Latitude", "Longitude"])
             st.map(tank_df.rename(columns={"Latitude": "lat", "Longitude": "lon"}))
 
-            tank_df = tank_df.dropna(subset=["Latitude", "Longitude"])
-            
-            # Bereken totale routeafstand met tankstops
+            # Afstand van de route met stops
             totale_afstand = 0
             for i in range(1, len(route_coords)):
                 p1 = route_coords[i - 1]
                 p2 = route_coords[i]
                 totale_afstand += geodesic((p1[1], p1[0]), (p2[1], p2[0])).km
 
-            # Bereken afstand zonder tussenliggende tankstops
+            # Afstand zonder tankstops
             originele_coords = get_osrm_route([start, end])
             originele_afstand = 0
             for i in range(1, len(originele_coords)):
@@ -387,9 +391,6 @@ if st.button("Genereer Route"):
 
             st.write("🛣️ **Totale afstand met OG-tanklocaties:** {:.1f} km".format(totale_afstand))
             st.write("📏 **Afstand zonder tankstops:** {:.1f} km".format(originele_afstand))
-
-
-            
 if used_stations:
     eerste = used_stations[0]
     afstand_start = geodesic((start[0], start[1]), (eerste[1], eerste[2])).km
