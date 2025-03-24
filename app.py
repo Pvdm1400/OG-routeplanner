@@ -1,5 +1,4 @@
 import streamlit as st
-st.title("OG Routekaart")
 import requests
 import pandas as pd
 from geopy.distance import geodesic
@@ -336,7 +335,7 @@ def geocode_address(address):
     return None
 
 # Streamlit UI
-
+st.title("OG Routeplanner (zonder Folium)")
 
 start_address = st.text_input("Startadres", value="")
 end_address = st.text_input("Eindadres", value="")
@@ -353,10 +352,7 @@ if st.button("Genereer Route"):
         st.error("Kon één van de adressen niet vinden.")
     else:
         waypoints, used_stations = build_route_with_filtered_tankstations(start, end, tankstations, interval_km=interval_km, corridor_km=corridor_km)
-        with st.spinner("🔄 Route wordt berekend..."):
-with st.spinner("Route wordt berekend..."):
-    route_coords = get_osrm_route([(wp[0], wp[1]) for wp in waypoints])
-st.success("Route succesvol berekend ✅")
+        route_coords = get_osrm_route([(wp[0], wp[1]) for wp in waypoints])
         if route_coords:
             df = pd.DataFrame(route_coords, columns=["Longitude", "Latitude"])
             df["Route"] = route_name
