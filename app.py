@@ -3,6 +3,7 @@ import streamlit as st
 import requests
 import pandas as pd
 from geopy.distance import geodesic
+from geopy.geocoders import Nominatim
 import os
 
 OSRM_SERVER = "https://router.project-osrm.org"
@@ -89,31 +90,36 @@ def save_route_log(start, end, route_name):
         full_log = log_entry
     full_log.to_csv(log_file, index=False)
 
+def geocode_address(address):
+    geolocator = Nominatim(user_agent="streamlit-routeplanner")
+    location = geolocator.geocode(address)
+    if location:
+        return (location.latitude, location.longitude)
+    return None
+
 # Streamlit interface
 st.title("OG Routeplanner met Tankstations")
 
-col1, col2 = st.columns(2)
-with col1:
-    start_lat = st.number_input("Start Latitude", value=59.3293)
-    start_lon = st.number_input("Start Longitude", value=18.0686)
-with col2:
-    end_lat = st.number_input("Eind Latitude", value=50.8503)
-    end_lon = st.number_input("Eind Longitude", value=4.3517)
-
+start_address = st.text_input("Startadres", value="Stockholm, Zweden")
+end_address = st.text_input("Eindadres", value="Brussel, België")
 route_name = st.text_input("Routenaam", value="Mijn Route")
 
 if st.button("Genereer Route"):
-    start = (start_lat, start_lon)
-    end = (end_lat, end_lon)
-    waypoints = build_route_with_filtered_tankstations(start, end, tankstations)
-    route_coords = get_osrm_route([(wp[0], wp[1]) if isinstance(wp, tuple) else (wp[0], wp[1]) for wp in waypoints])
-    if route_coords:
-        df = pd.DataFrame(route_coords, columns=["Longitude", "Latitude"])
-        df["Type"] = mark_point_type(route_coords, waypoints)
-        df["Route"] = route_name
-        st.map(df.rename(columns={"Latitude": "lat", "Longitude": "lon"}))
-        st.dataframe(df)
-        save_route_log(start, end, route_name)
-        st.success("Route gegenereerd en opgeslagen!")
+    start = geocode_address(start_address)
+    end = geocode_address(end_address)
+
+    if not start or not end:
+        st.error("Kon één van de adressen niet vinden.")
     else:
-        st.error("Kon geen route genereren met OSRM.")
+        waypoints = build_route_with_filtered_tankstations(start, end, tankstations)
+        route_coords = get_osrm_route([(wp[0], wp[1]) if isinstance(wp, tuple) else (wp[0], wp[1]) for wp in waypoints])
+        if route_coords:
+            df = pd.DataFrame(route_coords, columns=["Longitude", "Latitude"])
+            df["Type"] = mark_point_type(route_coords, waypoints)
+            df["Route"] = route_name
+            st.map(df.rename(columns={"Latitude": "lat", "Longitude": "lon"}))
+            st.dataframe(df)
+            save_route_log(start, end, route_name)
+            st.success("Route gegenereerd en opgeslagen!")
+        else:
+            st.error("Kon geen route genereren met OSRM.")
