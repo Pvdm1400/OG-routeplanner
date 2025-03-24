@@ -8,13 +8,13 @@ import os
 
 OSRM_SERVER = "https://router.project-osrm.org"
 
-# Tankstations als (Latitude, Longitude) tuples
+# Tankstations als ("Naam", Latitude, Longitude) tuples
 tankstations = [
-    (52.38042, 10.006417), (52.161625, 10.007915), (53.39059096, 10.04460454),
-    (53.701913, 10.057361), (52.6091111111111, 10.07575), (53.63925, 10.0894444444444),
-    (51.9472222222222, 10.1393611111111), (49.37658, 10.1993), (48.5438055555556, 10.3675555555556),
-    (50.873632, 10.830234), (51.110276, 10.929985), (51.8109444444444, 10.9385833333333),
-    (45.388855, 10.993261), (44.698492, 8.884370), (56.253201, 12.6255), (58.286241, 11.461953)
+    ("Tankstation A", 52.38042, 10.006417),
+    ("Tankstation B", 52.161625, 10.007915),
+    ("Tankstation C", 53.39059096, 10.04460454),
+    ("Tankstation D", 53.701913, 10.057361),
+    ("Tankstation E", 52.6091111111111, 10.07575)
 ]
 
 def get_osrm_route(waypoints):
@@ -29,17 +29,18 @@ def get_osrm_route(waypoints):
     return data['routes'][0]['geometry']['coordinates']
 
 def is_within_corridor(start, end, point, corridor_km=100):
-    d1 = geodesic((start[0], start[1]), (point[0], point[1])).km
-    d2 = geodesic((point[0], point[1]), (end[0], end[1])).km
+    d1 = geodesic((start[0], start[1]), (point[1], point[2])).km
+    d2 = geodesic((point[1], point[2]), (end[0], end[1])).km
     d_total = geodesic((start[0], start[1]), (end[0], end[1])).km
     return abs((d1 + d2) - d_total) <= corridor_km
 
 def build_route_with_filtered_tankstations(start, end, tankstations, interval_km=250):
     route = get_osrm_route([start, end])
     if not route:
-        return []
+        return [], []
     filtered_tanks = [ts for ts in tankstations if is_within_corridor(start, end, ts)]
     waypoints = [start]
+    used_stations = []
     total_distance = 0
     last_point = route[0]
     for i in range(1, len(route)):
@@ -48,31 +49,16 @@ def build_route_with_filtered_tankstations(start, end, tankstations, interval_km
         total_distance += step_distance
         if total_distance >= interval_km:
             if filtered_tanks:
-                closest = min(filtered_tanks, key=lambda s: geodesic((curr_point[1], curr_point[0]), s).km)
-                waypoints.append((closest[0], closest[1]))
+                closest = min(filtered_tanks, key=lambda s: geodesic((curr_point[1], curr_point[0]), (s[1], s[2])).km)
+                waypoints.append((closest[1], closest[2]))
+                used_stations.append(closest[0])
             else:
-                waypoints.append((curr_point[1], curr_point[0], "Geen tankstation in de buurt"))
+                used_stations.append("Geen tankstation in de buurt")
+                waypoints.append((curr_point[1], curr_point[0]))
             total_distance = 0
         last_point = curr_point
     waypoints.append(end)
-    return waypoints
-
-def mark_point_type(route, waypoints, tolerance=0.001):
-    types = []
-    for lon, lat in route:
-        match = "Routepunt"
-        for wp in waypoints:
-            if len(wp) == 3 and wp[2] == "Geen tankstation in de buurt":
-                wlat, wlon = wp[0], wp[1]
-                label = wp[2]
-            else:
-                wlat, wlon = wp
-                label = "Tankstation"
-            if abs(lat - wlat) < tolerance and abs(lon - wlon) < tolerance:
-                match = label
-                break
-        types.append(match)
-    return types
+    return waypoints, used_stations
 
 def save_route_log(start, end, route_name):
     log_entry = pd.DataFrame([{
@@ -111,15 +97,14 @@ if st.button("Genereer Route"):
     if not start or not end:
         st.error("Kon één van de adressen niet vinden.")
     else:
-        waypoints = build_route_with_filtered_tankstations(start, end, tankstations)
-        route_coords = get_osrm_route([(wp[0], wp[1]) if isinstance(wp, tuple) else (wp[0], wp[1]) for wp in waypoints])
+        waypoints, used_stations = build_route_with_filtered_tankstations(start, end, tankstations)
+        route_coords = get_osrm_route([(wp[0], wp[1]) for wp in waypoints])
         if route_coords:
             df = pd.DataFrame(route_coords, columns=["Longitude", "Latitude"])
-            df["Type"] = mark_point_type(route_coords, waypoints)
-            df["Route"] = route_name
             st.map(df.rename(columns={"Latitude": "lat", "Longitude": "lon"}))
-            st.dataframe(df)
+            st.subheader("Tankstations op de route")
+            for i, station in enumerate(used_stations, 1):
+                st.markdown(f"🛢️ **Tankstation {i}:** {station}")
             save_route_log(start, end, route_name)
-            st.success("Route gegenereerd en opgeslagen!")
         else:
             st.error("Kon geen route genereren met OSRM.")
