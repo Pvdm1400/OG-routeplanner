@@ -357,8 +357,8 @@ if st.button("Genereer Route"):
         if route_coords:
             df = pd.DataFrame(route_coords, columns=["Longitude", "Latitude"])
             df["Route"] = route_name
-    else:
-        st.error("Kon geen route genereren met OSRM.")
+        else:
+            st.error("Kon geen route genereren met OSRM.")
             st.map(df.rename(columns={"Latitude": "lat", "Longitude": "lon"}))
 
             
