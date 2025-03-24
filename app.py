@@ -1,21 +1,12 @@
 
 import streamlit as st
 import requests
+import pandas as pd
 from geopy.distance import geodesic
-import folium
-from streamlit_folium import st_folium
 from geopy.geocoders import Nominatim
 
-st.set_page_config(page_title="OG Routeplanner", layout="wide")
-st.image("Alleen spark.png", width=80)
-st.title("OG Routeplanner")
+OSRM_SERVER = "https://router.project-osrm.org"
 
-# Gebruikersinstellingen
-st.sidebar.header("Route-instellingen")
-afstand_interval = st.sidebar.slider("Afstand tussen tankstations (km)", min_value=50, max_value=500, value=250, step=10)
-max_afwijking = st.sidebar.slider("Maximale afwijking van route (km)", min_value=10, max_value=300, value=100, step=10)
-
-# Ingebouwde lijst met tankstations
 tankstations = [
     ("ADRIANO OLIVETTI SNC 13048", 45.38002020650739, 8.14634168147584),
     ("LUIGI GHERZI 15 28100", 45.454214522946366, 8.648874406509199),
@@ -290,59 +281,78 @@ tankstations = [
     ("Hildesheimer Straße 407 (Wülfel)", 52.3264166666667, 9.78166666666667)
 ]
 
+def get_osrm_route(waypoints):
+    waypoint_str = ";".join([f"{lon},{lat}" for lat, lon in waypoints])
+    url = f"{OSRM_SERVER}/route/v1/driving/{waypoint_str}?overview=full&geometries=geojson"
+    response = requests.get(url)
+    if response.status_code != 200:
+        return []
+    data = response.json()
+    if 'routes' not in data or not data['routes']:
+        return []
+    return data['routes'][0]['geometry']['coordinates']
 
-# Start- en eindlocatie invoer
-st.sidebar.header("Routepunten")
-start_loc = st.sidebar.text_input("Startlocatie (bijv. Amsterdam)")
-end_loc = st.sidebar.text_input("Eindlocatie (bijv. Berlijn)")
+def is_within_corridor(start, end, point, corridor_km=100):
+    d1 = geodesic((start[0], start[1]), (point[1], point[2])).km
+    d2 = geodesic((point[1], point[2]), (end[0], end[1])).km
+    d_total = geodesic((start[0], start[1]), (end[0], end[1])).km
+    return abs((d1 + d2) - d_total) <= corridor_km
 
-geolocator = Nominatim(user_agent="og-routeplanner")
+def build_route_with_filtered_tankstations(start, end, tankstations, interval_km=250):
+    route = get_osrm_route([start, end])
+    if not route:
+        return [], []
+    filtered_tanks = [ts for ts in tankstations if is_within_corridor(start, end, ts)]
+    waypoints = [start]
+    used_stations = []
+    total_distance = 0
+    last_point = route[0]
+    for i in range(1, len(route)):
+        curr_point = route[i]
+        step_distance = geodesic((last_point[1], last_point[0]), (curr_point[1], curr_point[0])).km
+        total_distance += step_distance
+        if total_distance >= interval_km:
+            if filtered_tanks:
+                closest = min(filtered_tanks, key=lambda s: geodesic((curr_point[1], curr_point[0]), (s[1], s[2])).km)
+                waypoints.append((closest[1], closest[2]))
+                used_stations.append(closest)
+            else:
+                used_stations.append(("Geen tankstation in de buurt", curr_point[1], curr_point[0]))
+                waypoints.append((curr_point[1], curr_point[0]))
+            total_distance = 0
+        last_point = curr_point
+    waypoints.append(end)
+    return waypoints, used_stations
 
-def geocode(loc):
-    try:
-        location = geolocator.geocode(loc)
+def geocode_address(address):
+    geolocator = Nominatim(user_agent="streamlit-routeplanner")
+    location = geolocator.geocode(address)
+    if location:
         return (location.latitude, location.longitude)
-    except:
-        return None
+    return None
 
-if start_loc and end_loc:
-    start_coords = geocode(start_loc)
-    end_coords = geocode(end_loc)
+# Streamlit UI
+st.title("OG Routeplanner (zonder Folium)")
 
-    if start_coords and end_coords:
-        # Bereken afstand
-        route_afstand = geodesic(start_coords, end_coords).km
+start_address = st.text_input("Startadres", value="Stockholm, Zweden")
+end_address = st.text_input("Eindadres", value="Brussel, België")
+route_name = st.text_input("Routenaam", value="Mijn Route")
 
-        # Filter tankstations binnen corridor
-        def is_within_corridor(start, end, point, corridor_km):
-            d1 = geodesic(start, (point[1], point[2])).km
-            d2 = geodesic((point[1], point[2]), end).km
-            d_total = geodesic(start, end).km
-            return abs((d1 + d2) - d_total) <= corridor_km
+if st.button("Genereer Route"):
+    start = geocode_address(start_address)
+    end = geocode_address(end_address)
 
-        filtered_stations = [ts for ts in tankstations if is_within_corridor(start_coords, end_coords, ts, max_afwijking)]
-
-        # Bouw folium-kaart
-        m = folium.Map(location=start_coords, zoom_start=6)
-
-        # Voeg start en eindpunt toe
-        folium.Marker(start_coords, tooltip="Start", icon=folium.Icon(color="green")).add_to(m)
-        folium.Marker(end_coords, tooltip="Eind", icon=folium.Icon(color="red")).add_to(m)
-
-        # Voeg tankstation-markers toe
-        for name, lat, lon in filtered_stations:
-            folium.Marker(
-                location=(lat, lon),
-                tooltip=name,
-                icon=folium.Icon(color="blue", icon="tint", prefix="fa")
-            ).add_to(m)
-
-        # Toon kaart
-        st_folium(m, width=900, height=600)
-
-        # Toon afstand
-        st.markdown(f"### Totale afstand tussen start en eindpunt: **{route_afstand:.2f} km**")
+    if not start or not end:
+        st.error("Kon één van de adressen niet vinden.")
     else:
-        st.error("Start of eindlocatie kon niet worden gevonden.")
-else:
-    st.info("Vul een start- en eindlocatie in om de route te berekenen.")
+        waypoints, used_stations = build_route_with_filtered_tankstations(start, end, tankstations)
+        route_coords = get_osrm_route([(wp[0], wp[1]) for wp in waypoints])
+        if route_coords:
+            df = pd.DataFrame(route_coords, columns=["Longitude", "Latitude"])
+            df["Route"] = route_name
+            st.map(df.rename(columns={"Latitude": "lat", "Longitude": "lon"}))
+            st.subheader("Tankstations op de route")
+            for i, (name, _, _) in enumerate(used_stations, 1):
+                st.markdown(f"🛢️ **Tankstation {i}:** {name}")
+        else:
+            st.error("Kon geen route genereren met OSRM.")
