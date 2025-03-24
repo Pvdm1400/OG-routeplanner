@@ -336,6 +336,28 @@ def geocode_address(address):
 # Streamlit UI
 st.title("OG Routeplanner (zonder Folium)")
 
+start_address = st.text_input("Startadres")
+end_address = st.text_input("Eindadres")
+
+if st.button("Genereer route"):
+    if start_address and end_address:
+        start = geolocator.geocode(start_address)
+        end = geolocator.geocode(end_address)
+        if start and end:
+            waypoints, used_stations = build_route_with_filtered_tankstations(
+                start, end, tankstations, interval_km=interval_km, corridor_km=corridor_km)
+            route_coords = get_osrm_route([(wp[0], wp[1]) for wp in waypoints])
+            if route_coords:
+                df = pd.DataFrame(route_coords, columns=["Longitude", "Latitude"])
+                df["Route"] = "Ingevoerde route"
+                # 📍 Voeg hier visuals, afstandsinfo en OG-tankstations toe
+                st.map(df.rename(columns={"Latitude": "lat", "Longitude": "lon"}))
+            else:
+                st.error("Kon geen route genereren met OSRM.")
+        else:
+            st.error("Adres niet gevonden.")
+    else:
+        st.warning("Vul beide adressen in.")
 start_address = st.text_input("Startadres", value="Oosterhamrikkade, Groningen")
 end_address = st.text_input("Eindadres", value="Kiruna, Zweden")
 route_name = st.text_input("Routenaam", value="Mijn Route")
