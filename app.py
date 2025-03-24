@@ -317,11 +317,9 @@ def build_route_with_filtered_tankstations(start, end, tankstations, interval_km
                 if closest not in used_stations:
                     used_stations.append(closest)
                     waypoints.append((closest[1], closest[2]))
-        else:
-            used_stations.append(("Geen OG tanklocatie mogelijk", curr_point[1], curr_point[0]))
+                else:
+                    used_stations.append(("Geen OG tanklocatie mogelijk", curr_point[1], curr_point[0]))
                     waypoints.append((curr_point[1], curr_point[0]))
-        else:
-            used_stations.append(("Geen OG tanklocatie mogelijk", curr_point[1], curr_point[0]))
                 waypoints.append((curr_point[1], curr_point[0]))
             total_distance = 0
         last_point = curr_point
