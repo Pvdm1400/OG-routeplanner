@@ -4,16 +4,9 @@ import pandas as pd
 from geopy.distance import geodesic
 from geopy.geocoders import Nominatim
 
+OSRM_SERVER = "https://router.project-osrm.org"
 
-col1, col2 = st.columns([1, 8])
-with col1:
-    st.image("Alleen spark.png", width=50)
-with col2:
-    st.title("OG routekaart")
-    
-    OSRM_SERVER = "https://router.project-osrm.org"
-    
-    tankstations = [
+tankstations = [
     ("ADRIANO OLIVETTI SNC 13048", 45.38002020650739, 8.14634168147584),
     ("LUIGI GHERZI 15 28100", 45.454214522946366, 8.648874406509199),
     ("MEZZACAMPAGNA SNC 37135", 45.38885497663997, 10.993260597366502),
@@ -285,61 +278,61 @@ with col2:
     ("Transportweg 24", 52.160984, 4.785012),
     ("Bremer Straße 46", 52.8044, 8.647264),
     ("Hildesheimer Straße 407 (Wülfel)", 52.3264166666667, 9.78166666666667)
-    ]
-    
-    def get_osrm_route(waypoints):
-waypoint_str = ";".join(["{},{}".format(lon, lat) for lat, lon in waypoints])
-url = f"{OSRM_SERVER}/route/v1/driving/{waypoint_str}?overview=full&geometries=geojson"
-response = requests.get(url)
-if response.status_code != 200:
-return []
-data = response.json()
-if 'routes' not in data or not data['routes']:
-return []
-return data['routes'][0]['geometry']['coordinates']
+]
+
+def get_osrm_route(waypoints):
+    waypoint_str = ";".join(["{},{}".format(lon, lat) for lat, lon in waypoints])
+    url = f"{OSRM_SERVER}/route/v1/driving/{waypoint_str}?overview=full&geometries=geojson"
+    response = requests.get(url)
+    if response.status_code != 200:
+        return []
+    data = response.json()
+    if 'routes' not in data or not data['routes']:
+        return []
+    return data['routes'][0]['geometry']['coordinates']
 
 def is_within_corridor(start, end, point, corridor_km=100):
-d1 = geodesic((start[0], start[1]), (point[1], point[2])).km
-d2 = geodesic((point[1], point[2]), (end[0], end[1])).km
-d_total = geodesic((start[0], start[1]), (end[0], end[1])).km
-return abs((d1 + d2) - d_total) <= corridor_km
+    d1 = geodesic((start[0], start[1]), (point[1], point[2])).km
+    d2 = geodesic((point[1], point[2]), (end[0], end[1])).km
+    d_total = geodesic((start[0], start[1]), (end[0], end[1])).km
+    return abs((d1 + d2) - d_total) <= corridor_km
 
 def build_route_with_filtered_tankstations(start, end, tankstations, interval_km=250, corridor_km=100):
-route = get_osrm_route([start, end])
-if not route:
-return [], []
-filtered_tanks = [ts for ts in tankstations if is_within_corridor(start, end, ts)]
-waypoints = [start]
-used_stations = []
-total_distance = 0
-last_point = route[0]
-for i in range(1, len(route)):
-curr_point = route[i]
-step_distance = geodesic((last_point[1], last_point[0]), (curr_point[1], curr_point[0])).km
-total_distance += step_distance
-if total_distance >= interval_km:
-if filtered_tanks:
-closest = min(filtered_tanks, key=lambda s: geodesic((curr_point[1], curr_point[0]), (s[1], s[2])).km)
-if closest not in used_stations:
-used_stations.append(closest)
-waypoints.append((closest[1], closest[2]))
-else:
-used_stations.append(("Geen OG tanklocatie mogelijk", curr_point[1], curr_point[0]))
-waypoints.append((curr_point[1], curr_point[0]))
-else:
-used_stations.append(("Geen OG tanklocatie mogelijk", curr_point[1], curr_point[0]))
-waypoints.append((curr_point[1], curr_point[0]))
-total_distance = 0
-last_point = curr_point
-waypoints.append(end)
-return waypoints, used_stations
+    route = get_osrm_route([start, end])
+    if not route:
+        return [], []
+    filtered_tanks = [ts for ts in tankstations if is_within_corridor(start, end, ts)]
+    waypoints = [start]
+    used_stations = []
+    total_distance = 0
+    last_point = route[0]
+    for i in range(1, len(route)):
+        curr_point = route[i]
+        step_distance = geodesic((last_point[1], last_point[0]), (curr_point[1], curr_point[0])).km
+        total_distance += step_distance
+        if total_distance >= interval_km:
+            if filtered_tanks:
+                closest = min(filtered_tanks, key=lambda s: geodesic((curr_point[1], curr_point[0]), (s[1], s[2])).km)
+                if closest not in used_stations:
+                    used_stations.append(closest)
+                    waypoints.append((closest[1], closest[2]))
+                else:
+                    used_stations.append(("Geen OG tanklocatie mogelijk", curr_point[1], curr_point[0]))
+                    waypoints.append((curr_point[1], curr_point[0]))
+            else:
+                used_stations.append(("Geen OG tanklocatie mogelijk", curr_point[1], curr_point[0]))
+                waypoints.append((curr_point[1], curr_point[0]))
+            total_distance = 0
+        last_point = curr_point
+    waypoints.append(end)
+    return waypoints, used_stations
 
 def geocode_address(address):
-geolocator = Nominatim(user_agent="streamlit-routeplanner")
-location = geolocator.geocode(address)
-if location:
-return (location.latitude, location.longitude)
-return None
+    geolocator = Nominatim(user_agent="streamlit-routeplanner")
+    location = geolocator.geocode(address)
+    if location:
+        return (location.latitude, location.longitude)
+    return None
 
 # Streamlit UI
 
@@ -348,57 +341,58 @@ col1, col2 = st.columns([1, 8])
 with col1:
     st.image("Alleen spark.png", width=50)
 with col2:
-    
-    start_address = st.text_input("Startadres", value="")
-    end_address = st.text_input("Eindadres", value="")
-    route_name = st.text_input("Routenaam", value="Mijn Route")
-    
-    interval_km = st.slider("Afstand tussen tankstops (km)", min_value=100, max_value=500, value=250, step=25)
-    corridor_km = st.slider("Maximale omweg vanaf hoofdlijn (km)", min_value=25, max_value=300, value=100, step=25)
-    
-    if st.button("Genereer Route"):
-start = geocode_address(start_address)
-end = geocode_address(end_address)
+    st.title("OG routekaart")
 
-if not start or not end:
-st.error("Kon één van de adressen niet vinden.")
-else:
-waypoints, used_stations = build_route_with_filtered_tankstations(start, end, tankstations, interval_km=interval_km, corridor_km=corridor_km)
-route_coords = get_osrm_route([(wp[0], wp[1]) for wp in waypoints])
-if route_coords:
-df = pd.DataFrame(route_coords, columns=["Longitude", "Latitude"])
-df["Route"] = route_name
-st.map(df.rename(columns={"Latitude": "lat", "Longitude": "lon"}))
+start_address = st.text_input("Startadres", value="")
+end_address = st.text_input("Eindadres", value="")
+route_name = st.text_input("Routenaam", value="Mijn Route")
 
-st.subheader("📍 OG Tanklocaties op de route")
-tank_df = pd.DataFrame([
-{"Latitude": lat, "Longitude": lon, "Naam": name}
-for name, lat, lon in used_stations
-])
-st.map(tank_df.rename(columns={"Latitude": "lat", "Longitude": "lon"}))
+interval_km = st.slider("Afstand tussen tankstops (km)", min_value=100, max_value=500, value=250, step=25)
+corridor_km = st.slider("Maximale omweg vanaf hoofdlijn (km)", min_value=25, max_value=300, value=100, step=25)
 
-tank_df = tank_df.dropna(subset=["Latitude", "Longitude"])
+if st.button("Genereer Route"):
+    start = geocode_address(start_address)
+    end = geocode_address(end_address)
 
-# Bereken totale routeafstand met tankstops
-totale_afstand = 0
-for i in range(1, len(route_coords)):
-p1 = route_coords[i - 1]
-p2 = route_coords[i]
-totale_afstand += geodesic((p1[1], p1[0]), (p2[1], p2[0])).km
+    if not start or not end:
+        st.error("Kon één van de adressen niet vinden.")
+    else:
+        waypoints, used_stations = build_route_with_filtered_tankstations(start, end, tankstations, interval_km=interval_km, corridor_km=corridor_km)
+        route_coords = get_osrm_route([(wp[0], wp[1]) for wp in waypoints])
+        if route_coords:
+            df = pd.DataFrame(route_coords, columns=["Longitude", "Latitude"])
+            df["Route"] = route_name
+            st.map(df.rename(columns={"Latitude": "lat", "Longitude": "lon"}))
 
-# Bereken afstand zonder tussenliggende tankstops
-originele_coords = get_osrm_route([start, end])
-originele_afstand = 0
-for i in range(1, len(originele_coords)):
-p1 = originele_coords[i - 1]
-p2 = originele_coords[i]
-originele_afstand += geodesic((p1[1], p1[0]), (p2[1], p2[0])).km
+            st.subheader("📍 OG Tanklocaties op de route")
+            tank_df = pd.DataFrame([
+                {"Latitude": lat, "Longitude": lon, "Naam": name}
+                for name, lat, lon in used_stations
+            ])
+            st.map(tank_df.rename(columns={"Latitude": "lat", "Longitude": "lon"}))
 
-st.write("🛣️ **Totale afstand met OG-tanklocaties:** {:.1f} km".format(totale_afstand))
-st.write("📏 **Afstand zonder tankstops:** {:.1f} km".format(originele_afstand))
+            tank_df = tank_df.dropna(subset=["Latitude", "Longitude"])
+            
+            # Bereken totale routeafstand met tankstops
+            totale_afstand = 0
+            for i in range(1, len(route_coords)):
+                p1 = route_coords[i - 1]
+                p2 = route_coords[i]
+                totale_afstand += geodesic((p1[1], p1[0]), (p2[1], p2[0])).km
+
+            # Bereken afstand zonder tussenliggende tankstops
+            originele_coords = get_osrm_route([start, end])
+            originele_afstand = 0
+            for i in range(1, len(originele_coords)):
+                p1 = originele_coords[i - 1]
+                p2 = originele_coords[i]
+                originele_afstand += geodesic((p1[1], p1[0]), (p2[1], p2[0])).km
+
+            st.write("🛣️ **Totale afstand met OG-tanklocaties:** {:.1f} km".format(totale_afstand))
+            st.write("📏 **Afstand zonder tankstops:** {:.1f} km".format(originele_afstand))
 
 
-for i, (name, _, _) in enumerate(used_stations, 1):
-st.markdown("🛢️ **Tankmoment {}:** {}".format(i, name))
-else:
-st.error("Kon geen route genereren met OSRM.")
+            for i, (name, _, _) in enumerate(used_stations, 1):
+                st.markdown("🛢️ **Tankmoment {}:** {}".format(i, name))
+        else:
+            st.error("Kon geen route genereren met OSRM.")
