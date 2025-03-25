@@ -348,7 +348,7 @@ col1, col2 = st.columns([1, 8])
 with col1:
     st.image("Alleen spark.png", width=50)
 with col2:
-
+    
 start_address = st.text_input("Startadres", value="")
 end_address = st.text_input("Eindadres", value="")
 route_name = st.text_input("Routenaam", value="Mijn Route")
