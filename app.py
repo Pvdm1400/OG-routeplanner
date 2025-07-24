@@ -362,7 +362,7 @@ tankstations = [
     ("Rue Euclide - zone Eurocentre", 1.405987, 43.78112),
     ("13 rue des Frères Lumières", 2.627272, 48.980219),
     ("Échangeur 22 - Centre Routier", -0.31, 46.3483),
-    ("Lieu dit "Esseaune"", 2.607854, 48.614273),
+    ("Lieu dit Esseaune", 2.607854, 48.614273),
     ("Rue André Ampère", 6.173779, 48.742454),
     ("rue Elisabeth Boselli", 2.64731, 48.99103),
     ("Chemin de la Mi-voie", 1.11358900000004, 49.402611),
