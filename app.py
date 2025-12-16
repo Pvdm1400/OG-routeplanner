@@ -3,6 +3,11 @@ import requests
 import pandas as pd
 from geopy.distance import geodesic
 from geopy.geocoders import Nominatim
+import re
+from geopy.extra.rate_limiter import RateLimiter
+from geopy.geocoders import Photon
+from geopy.exc import GeocoderUnavailable, GeocoderTimedOut, GeocoderServiceError
+
 
 OSRM_SERVER = "https://router.project-osrm.org"
 
@@ -346,11 +351,47 @@ def build_route_with_filtered_tankstations(start, end, tankstations, interval_km
     waypoints.append(end)
     return waypoints, used_stations
 
-def geocode_address(address):
-    geolocator = Nominatim(user_agent="streamlit-routeplanner")
-    location = geolocator.geocode(address)
-    if location:
-        return (location.latitude, location.longitude)
+### Geocoding (robust) ###
+# Streamlit Cloud draait vaak achter gedeelde IP's; Nominatim (OSM) kan daardoor rate-limitten.
+# Daarom: 1) nette user-agent, 2) timeout, 3) rate limiting + retries, 4) caching, 5) fallback geocoder.
+NOMINATIM_UA = "streamlit-routeplanner"
+
+geolocator_osm = Nominatim(user_agent=NOMINATIM_UA, timeout=15)
+geocode_osm = RateLimiter(geolocator_osm.geocode, min_delay_seconds=1, max_retries=2, error_wait_seconds=2.0)
+
+# Fallback: Photon (Komoot) – vaak wat toleranter op gedeelde IP's
+geolocator_photon = Photon(user_agent="og-routeplanner/1.0", timeout=15)
+geocode_photon = RateLimiter(geolocator_photon.geocode, min_delay_seconds=1, max_retries=2, error_wait_seconds=2.0)
+
+@st.cache_data(ttl=24*3600, show_spinner=False)
+def geocode_address(address: str):
+    """Return (lat, lon) of None. Supports 'lat,lon' input."""
+    addr = (address or "").strip()
+    if not addr:
+        return None
+
+    # Support direct lat,lon input as fallback
+    m = re.match(r"^\s*(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)\s*$", addr)
+    if m:
+        return (float(m.group(1)), float(m.group(2)))
+
+    # Try Nominatim first
+    try:
+        loc = geocode_osm(addr)
+        if loc:
+            return (loc.latitude, loc.longitude)
+    except (GeocoderUnavailable, GeocoderTimedOut, GeocoderServiceError) as e:
+        # Dit komt in de Streamlit logs (Manage app → Logs).
+        st.write("Nominatim geocoding error:", repr(e))
+
+    # Fallback to Photon
+    try:
+        loc = geocode_photon(addr)
+        if loc:
+            return (loc.latitude, loc.longitude)
+    except (GeocoderUnavailable, GeocoderTimedOut, GeocoderServiceError) as e:
+        st.write("Photon geocoding error:", repr(e))
+
     return None
 
 # Streamlit UI
